@@ -226,7 +226,8 @@ check("cancel works", "stop signal sent" in s.server_job("cancel", j2id, confirm
 time.sleep(1)
 check("cancelled job is done", "done, " in s.server_job("status", j2id), s.server_job("status", j2id))
 check("clean previews", s.server_job("clean").startswith("PREVIEW"))
-check("clean removes finished", "removed" in s.server_job("clean", confirm=True))
+check("clean removes finished", "removed 0" not in s.server_job("clean", confirm=True))
+check("list empty after clean", "(no jobs)" in s.server_job("list"), s.server_job("list"))
 check("background option on packages and docker_cli", all("background" in tools()[n].inputSchema["properties"]
       for n in ("server_run", "server_packages", "docker_cli")))
 

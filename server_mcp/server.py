@@ -1968,7 +1968,7 @@ def server_job(action: str = "list", job_id: str = "", host: str = "", lines: in
     stop = _gate(h, "destructive", "clean finished jobs", "delete the log files of finished background jobs", confirm)
     if stop:
         return stop
-    return _sh(h, 'd=/var/tmp/server-mcp-jobs-$(id -u); n=0; for r in "$d"/*.pid; do [ -e "$r" ] || continue; b="${r%.pid}"; [ -e "$b.rc" ] || { kill -0 "$(cat "$r")" 2>/dev/null && ! ps -o stat= -p "$(cat "$r")" 2>/dev/null | grep -q Z; } && continue; '
+    return _sh(h, 'd=/var/tmp/server-mcp-jobs-$(id -u); n=0; for r in "$d"/*.pid; do [ -e "$r" ] || continue; b="${r%.pid}"; if [ ! -e "$b.rc" ] && kill -0 "$(cat "$r")" 2>/dev/null && ! ps -o stat= -p "$(cat "$r")" 2>/dev/null | grep -q Z; then continue; fi; '
                   'rm -f -- "$b.rc" "$b.cmd" "$b.log" "$b.pid"; n=$((n+1)); done; echo "removed $n finished job(s)"', as_root)
 
 

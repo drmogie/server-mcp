@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.24.01
+Fixed `server_job clean`: it skipped finished jobs and removed nothing. It now removes them.
+
 ## 2026.10.23.09
 Background jobs. `server_run`, `server_packages` and `docker_cli` take `background=true`: the command starts on the host and you get a job id at once, so long jobs (upgrades, kernel installs, builds) no longer hit the time limit. New `server_job` tool: list, status, output, cancel, clean. Cancel and clean show a preview first.
 
