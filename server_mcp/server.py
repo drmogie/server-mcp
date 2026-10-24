@@ -33,13 +33,6 @@ For each host name (letters, digits; other characters become "_", upper case):
   SERVER_MCP_<NAME>_SUDO_PASSWORD  sudo password (default: the SSH password)
   SERVER_MCP_<NAME>_STACKS      folder with one sub folder per Compose stack (default /opt/stacks)
 
-Fallback login (tried when the main login is refused, then remembered):
-
-  SERVER_MCP_FALLBACK_SSH_USER      fallback user (default: the main user)
-  SERVER_MCP_FALLBACK_SSH_PASSWORD  fallback password (also the fallback sudo password)
-  SERVER_MCP_FALLBACK_SSH_KEY       fallback private key file
-  SERVER_MCP_<NAME>_FALLBACK_SSH_USER / _PASSWORD / _KEY   the same, for one host
-
 Shared settings (used by every host that does not set its own):
 
   SERVER_MCP_SSH_USER     login name. The host name is then used as the address
@@ -215,9 +208,6 @@ def _hosts() -> dict[str, dict[str, Any]]:
     d_key = ENV.get("SERVER_MCP_SSH_KEY", "").strip()
     d_pw = ENV.get("SERVER_MCP_SSH_PASSWORD", "")
     d_sudo_pw = ENV.get("SERVER_MCP_SUDO_PASSWORD", "")
-    d_fb_user = ENV.get("SERVER_MCP_FALLBACK_SSH_USER", "").strip()
-    d_fb_pw = ENV.get("SERVER_MCP_FALLBACK_SSH_PASSWORD", "")
-    d_fb_key = ENV.get("SERVER_MCP_FALLBACK_SSH_KEY", "").strip()
     d_remote_docker = ENV.get("SERVER_MCP_REMOTE_DOCKER", "").strip()
     d_sudo = ENV.get("SERVER_MCP_SUDO")
     d_stacks = ENV.get("SERVER_MCP_STACKS", "").strip()
@@ -252,11 +242,6 @@ def _hosts() -> dict[str, dict[str, Any]]:
         if pw:
             key = ""
         sudo_pw = (get("SUDO_PASSWORD") or "") or d_sudo_pw or pw
-        fb_user = (get("FALLBACK_SSH_USER") or "").strip() or d_fb_user
-        fb_pw = get("FALLBACK_SSH_PASSWORD") or d_fb_pw
-        fb_key = (get("FALLBACK_SSH_KEY") or "").strip() or d_fb_key
-        if not (fb_pw or fb_key):
-            fb_user = ""  # a fallback needs a password or a key
         hosts[name] = {
             "name": name,
             "address": addr,
@@ -265,9 +250,6 @@ def _hosts() -> dict[str, dict[str, Any]]:
             "key": key,
             "password": pw,
             "sudo_password": sudo_pw,
-            "fb_user": fb_user,
-            "fb_password": fb_pw if fb_user or fb_pw else "",
-            "fb_key": fb_key,
             "docker_path": (get("REMOTE_DOCKER") or "").strip() or d_remote_docker,
             "sudo": _truthy(sudo_raw if sudo_raw is not None else d_sudo),
             "stacks": stacks.rstrip("/") or "/",
@@ -334,33 +316,18 @@ def _rootable(fn: Callable) -> Callable:
     return wrapper
 
 
-# Hosts where the fallback login worked. Remembered while the tool runs.
-_FALLBACK_OK: set[str] = set()
-
-
 def _scrub(text: str, h: dict[str, Any]) -> str:
     """Remove the SSH and sudo passwords from any text."""
-    for secret in (h.get("password"), h.get("sudo_password"), h.get("fb_password")):
+    for secret in (h.get("password"), h.get("sudo_password")):
         if secret:
             text = text.replace(secret, "********")
     return text
 
 
-def _fallback(h: dict[str, Any]) -> dict[str, Any] | None:
-    """The same host, with the fallback login (user, password and/or key). None if not set."""
-    if not h["ssh"] or not (h.get("fb_password") or h.get("fb_key")):
-        return None
-    addr = h["ssh"].rpartition("@")[2]
-    user = h.get("fb_user") or h["ssh"].rpartition("@")[0]
-    pw = h.get("fb_password") or ""
-    return {**h, "ssh": f"{user}@{addr}" if user else addr, "password": pw, "key": h.get("fb_key") or "",
-            "sudo_password": pw or h.get("sudo_password") or "", "fb_user": "", "fb_password": "", "fb_key": ""}
-
-
-def _auth_failed(rc: int, err: str) -> bool:
-    low = err.lower()
-    return rc == 255 and ("permission denied" in low or "not accepted" in low
-                          or "authentication failed" in low or "no authentication methods" in low)
+SUDO_SCRIPT = (
+    'IFS= read -r p; if sudo -n true 2>/dev/null; then exec sudo -n "$@"; '
+    'else { printf "%s\\n" "$p"; cat; } | sudo -S -p "" "$@"; fi'
+)
 
 
 def _sudo_wrap(h: dict[str, Any], argv: list[str], root: bool) -> tuple[list[str], bytes]:
@@ -376,7 +343,9 @@ def _sudo_wrap(h: dict[str, Any], argv: list[str], root: bool) -> tuple[list[str
             argv[0] = ENV.get("SERVER_MCP_DOCKER_BIN", "docker")
     if (root or (h["sudo"] and is_docker)) and argv[0] != "sudo":
         if h.get("sudo_password"):
-            return ["sudo", "-S", "-p", ""] + argv, (h["sudo_password"] + "\n").encode()
+            # The password goes in on stdin (first line). If sudo needs no password, it is
+            # dropped, so it can never end up inside a file or command input.
+            return ["sh", "-c", SUDO_SCRIPT, "sh"] + argv, (h["sudo_password"] + "\n").encode()
         return ["sudo", "-n"] + argv, b""
     return argv, b""
 
@@ -455,23 +424,8 @@ def _once(h: dict[str, Any], argv: list[str], cwd: str | None, timeout: int | No
 def _exec_bytes(h: dict[str, Any], argv: list[str], cwd: str | None = None,
                 timeout: int | None = None, data: bytes | None = None,
                 root: bool = False) -> tuple[int, bytes, str]:
-    """Run a command on the host with exact bytes in and out. root=True runs it with sudo.
-
-    If the main login is refused and a fallback login is set, the fallback is tried
-    (and remembered for the next commands).
-    """
-    root = root or _FORCE_ROOT.get()
-    fb = _fallback(h)
-    if fb and h["name"] in _FALLBACK_OK:
-        return _once(fb, argv, cwd, timeout, data, root)
-    rc, out, err = _once(h, argv, cwd, timeout, data, root)
-    if fb and _auth_failed(rc, err):
-        rc2, out2, err2 = _once(fb, argv, cwd, timeout, data, root)
-        if not _auth_failed(rc2, err2):
-            _FALLBACK_OK.add(h["name"])
-            return rc2, out2, err2
-        return rc, out, err + " (the fallback login was refused too)"
-    return rc, out, err
+    """Run a command on the host with exact bytes in and out. root=True runs it with sudo."""
+    return _once(h, argv, cwd, timeout, data, root or _FORCE_ROOT.get())
 
 
 def _exec(h: dict[str, Any], argv: list[str], cwd: str | None = None,
@@ -655,10 +609,6 @@ def server_hosts() -> str:
             "sudo": h["sudo"], "stacks_folder": h["stacks"],
             "login": "password" if h.get("password") else ("key" if h.get("key") else "default ssh key"),
         }
-        fb = _fallback(h)
-        if fb:
-            kinds = [k for k, on in (("password", fb["password"]), ("key", fb["key"])) if on]
-            row["fallback_login"] = "set (" + " + ".join(kinds) + ")" + (", in use" if h["name"] in _FALLBACK_OK else "")
         if rc == 0:
             row["docker"] = out.strip()
             rc2, out2, _ = _docker(h, ["compose", "version", "--short"])

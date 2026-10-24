@@ -123,7 +123,7 @@ check("plain command stays plain", s._sudo_wrap(h2, ["ls"], False)[0] == ["ls"])
 check("root adds sudo", s._sudo_wrap(h2, ["ls"], True)[0] == ["sudo", "-n", "ls"])
 h3 = {**h2, "sudo_password": "pw"}
 argv, feed = s._sudo_wrap(h3, ["ls"], True)
-check("sudo password goes through stdin", argv[:4] == ["sudo", "-S", "-p", ""] and feed == b"pw\n" and "pw" not in argv)
+check("sudo password goes through stdin only", feed == b"pw\n" and "pw" not in " ".join(argv) and argv[-1] == "ls")
 
 # ---------------------------------------------------------------- ssh options
 hh = {"name": "x", "ssh": "u@h", "port": "", "key": ""}
@@ -132,35 +132,43 @@ os.environ["SERVER_MCP_SSH_STRICT"] = "true"
 check("strict mode turns that off", "StrictHostKeyChecking=accept-new" not in s._ssh_cmd(hh, ["ls"]))
 del os.environ["SERVER_MCP_SSH_STRICT"]
 
-# ---------------------------------------------------------------- fallback login
-os.environ.update({"SERVER_MCP_HOSTS": "192.0.2.10", "SERVER_MCP_SSH_USER": "main",
-                   "SERVER_MCP_FALLBACK_SSH_USER": "backup", "SERVER_MCP_FALLBACK_SSH_PASSWORD": "pw123",
-                   "SERVER_MCP_FALLBACK_SSH_KEY": "/k/id"})
-host = list(s._hosts().values())[0]
-fb = s._fallback(host)
-check("fallback uses its own user, password and key", fb["ssh"] == "backup@192.0.2.10" and fb["password"] == "pw123" and fb["key"] == "/k/id")
-tried = []
-real_once = s._once
+# ---------------------------------------------------------------- sudo password from the SSH password
+os.environ.update({"SERVER_MCP_HOSTS": "192.0.2.10", "SERVER_MCP_SSH_USER": "main", "SERVER_MCP_SSH_PASSWORD": "pw123"})
+hh = list(s._hosts().values())[0]
+check("SSH password is also the sudo password", hh["sudo_password"] == "pw123")
+os.environ["SERVER_MCP_SUDO_PASSWORD"] = "other"
+check("a separate sudo password wins", list(s._hosts().values())[0]["sudo_password"] == "other")
+del os.environ["SERVER_MCP_SUDO_PASSWORD"]
+check("password is scrubbed", "pw123" not in s._scrub("x pw123 y", hh))
+check("no fallback settings left", "fb_user" not in hh)
 
-
-def fake_once(hh, argv, cwd, timeout, data, root):
-    tried.append(hh["ssh"])
-    return (255, b"", "Permission denied (publickey)") if hh["ssh"].startswith("main") else (0, b"ok", "")
-
-
-s._once = fake_once
-r = s._exec_bytes(host, ["ls"])
-check("fallback is tried when login is refused", r[0] == 0 and tried == ["main@192.0.2.10", "backup@192.0.2.10"], tried)
-s._exec_bytes(host, ["ls"])
-check("working fallback is remembered", tried[-1] == "backup@192.0.2.10" and len(tried) == 3, tried)
-s._FALLBACK_OK.clear()
-s._once = lambda *a: (1, b"", "some other error")
-check("fallback not used for normal errors", s._exec_bytes(host, ["ls"])[0] == 1 and not s._FALLBACK_OK)
-s._once = real_once
-for k in [k for k in os.environ if "FALLBACK" in k]:
+# real run of the sudo wrapper against a fake sudo (asks for a password, or does not)
+import subprocess  # noqa: E402
+bindir = os.path.join(TMP, "bin")
+os.makedirs(bindir)
+Path(bindir, "sudo").write_text("""#!/bin/sh
+if [ "$1" = "-n" ]; then
+  shift
+  [ "$1" = "true" ] && [ -z "$NOPW" ] && exit 1
+  exec "$@"
+fi
+if [ "$1" = "-S" ]; then
+  shift; shift; shift
+  IFS= read -r p; [ "$p" = "pw123" ] || { echo "bad password" >&2; exit 1; }
+  exec "$@"
+fi
+exit 9
+""")
+os.chmod(os.path.join(bindir, "sudo"), 0o755)
+hs = {"name": "x", "ssh": "", "docker_path": "", "sudo": False, "sudo_password": "pw123", "password": "", "key": "", "port": ""}
+for nopw in ("", "1"):
+    argv, feed = s._sudo_wrap(hs, ["cat"], True)
+    env = {**os.environ, "PATH": bindir + os.pathsep + os.environ["PATH"], "NOPW": nopw}
+    r = subprocess.run(argv, input=feed + b"file data\n", capture_output=True, env=env)
+    label = "no password needed" if nopw else "password needed"
+    check(f"sudo wrapper, {label}: command gets only its own data", r.stdout == b"file data\n" and r.returncode == 0, r)
+for k in ("SERVER_MCP_SSH_PASSWORD", "SERVER_MCP_SSH_USER"):
     del os.environ[k]
-check("no fallback when none is set", s._fallback(list(s._hosts().values())[0]) is None)
-check("password is scrubbed", "pw123" not in s._scrub("x pw123 y", {"password": "pw123"}))
 
 # ---------------------------------------------------------------- no personal data in the source
 src = (ROOT / "server_mcp" / "server.py").read_text()

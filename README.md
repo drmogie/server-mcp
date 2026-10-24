@@ -39,9 +39,8 @@ All settings are environment variables. The full list is at the top of `server_m
 | --- | --- |
 | `SERVER_MCP_HOSTS` | Hosts, comma separated. Empty means this machine. |
 | `SERVER_MCP_HOSTS_NAME` | Friendly names, as `ip=name` pairs. |
-| `SERVER_MCP_SSH_USER`, `_SSH_KEY`, `_SSH_PASSWORD`, `_SSH_PORT` | Login for all hosts. |
-| `SERVER_MCP_SUDO`, `_SUDO_PASSWORD` | Use sudo for docker and root actions. |
-| `SERVER_MCP_FALLBACK_SSH_USER`, `_PASSWORD`, `_KEY` | Fallback login, tried if the main one is refused. |
+| `SERVER_MCP_SSH_USER`, `_SSH_KEY`, `_SSH_PASSWORD`, `_SSH_PORT` | Login for all hosts. Use a key or a password. |
+| `SERVER_MCP_SUDO`, `_SUDO_PASSWORD` | Use sudo for docker and root actions. The SSH password is used for sudo too, unless you set a separate sudo password. |
 | `SERVER_MCP_<NAME>_...` | Any setting for one host only. |
 | `SERVER_MCP_FILE_ROOTS` | Limit the file tools to some folders. |
 | `SERVER_MCP_READ_ONLY` | Refuse every change. |

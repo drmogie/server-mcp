@@ -8,10 +8,8 @@
         "SERVER_MCP_HOSTS_NAME": "192.0.2.10=web1,192.0.2.11=db1",
         "SERVER_MCP_SSH_USER": "admin",
         "SERVER_MCP_SSH_KEY": "/path/to/private_key",
-        "SERVER_MCP_SUDO": "true",
-        "SERVER_MCP_FALLBACK_SSH_USER": "backup",
-        "SERVER_MCP_FALLBACK_SSH_PASSWORD": "change-me",
-        "SERVER_MCP_FALLBACK_SSH_KEY": "/path/to/fallback_key"
+        "SERVER_MCP_SSH_PASSWORD": "change-me-or-remove-if-using-a-key",
+        "SERVER_MCP_SUDO": "true"
       }
     }
   }
