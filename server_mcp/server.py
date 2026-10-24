@@ -10,16 +10,18 @@ over SSH with a key or a password. For the machine it runs on, it runs
 
 Settings come from environment variables only.
 
-  SERVER_MCP_HOSTS      your hosts, comma separated. Each is a name or an IP address,
-                        for example "web1" or "192.0.2.50"
-                        (if left empty, one host called "local" is used)
-  SERVER_MCP_HOSTS_NAME friendly names for those hosts, so you can say "web1" and
-                        Claude knows the IP. Either a list in the same order,
-                        "web1,db1"
-                        (leave a slot empty to skip a host: "web1,,db1"), or pairs, "192.0.2.50=web1,192.0.2.40=db1".
-                        The IP is still what SSH connects to. Claude can use the name or
-                        the IP. The <NAME> in the settings below can be the friendly
-                        name or the IP.
+  SERVER_MCP_HOSTS      your hosts, comma separated (a name or an IP address).
+                        Optional when SERVER_MCP_HOSTS_NAME has pairs.
+                        If both are empty, one host called "local" is used.
+  SERVER_MCP_HOSTS_NAME friendly names, as pairs. Each pair is name=address or
+                        address=name, for example
+                        "web1=192.0.2.50,db1=192.0.2.40".
+                        Separate pairs with commas, semicolons, new lines, or write
+                        a JSON list inside the string:
+                        "[\\"web1=192.0.2.50\\", \\"db1=192.0.2.40\\"]".
+                        Every pair is also a host, so SERVER_MCP_HOSTS is not needed.
+                        SSH connects to the address. Claude can use the name or the
+                        address. The <NAME> in the settings below can be either one.
 
 For each host name (letters, digits; other characters become "_", upper case):
 
@@ -190,18 +192,56 @@ def _truthy(v: str | None) -> bool:
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _is_ip(x: str) -> bool:
+    try:
+        ipaddress.ip_address(x)
+        return True
+    except ValueError:
+        return False
+
+
+def _name_items(raw: str) -> list[str]:
+    """Split SERVER_MCP_HOSTS_NAME into items. Commas, semicolons, new lines, or a JSON list all work."""
+    raw = raw.strip()
+    if raw.startswith("["):
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+        except ValueError:
+            pass
+    return [x.strip().strip('"\'') for x in re.split(r"[,;\n]", raw.strip("[]")) if x.strip().strip('"\'')]
+
+
+def _parse_names(raw: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """Return ([(address, name), ...], plain names). Pairs work both ways: name=ip or ip=name."""
+    pairs: list[tuple[str, str]] = []
+    plain: list[str] = []
+    for item in _name_items(raw):
+        if "=" not in item:
+            plain.append(item)
+            continue
+        left, _, right = (x.strip() for x in item.partition("="))
+        if not left or not right:
+            continue
+        if _is_ip(left) and not _is_ip(right):
+            pairs.append((left, right))
+        elif _is_ip(right) and not _is_ip(left):
+            pairs.append((right, left))
+        else:
+            pairs.append((right, left))  # name=address is the default
+    return pairs, plain
+
+
 def _hosts() -> dict[str, dict[str, Any]]:
+    pair_list, plain = _parse_names(ENV.get("SERVER_MCP_HOSTS_NAME", ""))
+    pairs = {addr: name for addr, name in pair_list}
     entries = [n.strip() for n in ENV.get("SERVER_MCP_HOSTS", "").split(",") if n.strip()]
-    if not entries:
-        # Only SERVER_MCP_HOSTS_NAME with ip=name pairs: those pairs are the host list.
-        entries = [x.partition("=")[0].strip() for x in ENV.get("SERVER_MCP_HOSTS_NAME", "").split(",") if "=" in x and x.partition("=")[0].strip()]
+    for addr, _name in pair_list:  # every named host is also a host
+        if addr not in entries:
+            entries.append(addr)
     if not entries:
         entries = ["local"]
-    # Friendly names. SERVER_MCP_HOSTS_NAME is either a list in the same order as
-    # SERVER_MCP_HOSTS ("web1,db1") or pairs ("192.0.2.50=web1,...").
-    raw_names = [n.strip() for n in ENV.get("SERVER_MCP_HOSTS_NAME", "").split(",")]
-    pairs = {k.strip(): v.strip() for k, _, v in (x.partition("=") for x in raw_names if "=" in x) if k.strip() and v.strip()}
-    plain = [x for x in raw_names if "=" not in x]
     # Shared defaults, used by every host that does not set its own value.
     d_user = ENV.get("SERVER_MCP_SSH_USER", "").strip()
     d_port = ENV.get("SERVER_MCP_SSH_PORT", "").strip()

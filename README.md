@@ -37,8 +37,8 @@ All settings are environment variables. The full list is at the top of `server_m
 
 | Setting | Meaning |
 | --- | --- |
-| `SERVER_MCP_HOSTS` | Hosts, comma separated. Empty means this machine. |
-| `SERVER_MCP_HOSTS_NAME` | Friendly names, as `ip=name` pairs. |
+| `SERVER_MCP_HOSTS_NAME` | Your hosts, as `name=address` pairs (or `address=name`). Separate with commas, semicolons or new lines. Every pair is a host. |
+| `SERVER_MCP_HOSTS` | Optional. A plain list of hosts without names. Empty and no pairs means this machine. |
 | `SERVER_MCP_SSH_USER`, `_SSH_KEY`, `_SSH_PASSWORD`, `_SSH_PORT` | Login for all hosts. Use a key or a password. |
 | `SERVER_MCP_SUDO`, `_SUDO_PASSWORD` | Use sudo for docker and root actions. The SSH password is used for sudo too, unless you set a separate sudo password. |
 | `SERVER_MCP_<NAME>_...` | Any setting for one host only. |

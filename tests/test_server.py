@@ -135,6 +135,22 @@ os.environ["SERVER_MCP_SSH_STRICT"] = "true"
 check("strict mode turns that off", "StrictHostKeyChecking=accept-new" not in s._ssh_cmd(hh, ["ls"]))
 del os.environ["SERVER_MCP_SSH_STRICT"]
 
+# ---------------------------------------------------------------- host names
+def names(raw):
+    os.environ["SERVER_MCP_HOSTS_NAME"] = raw
+    os.environ.pop("SERVER_MCP_HOSTS", None)
+    return {k: v["address"] for k, v in s._hosts().items()}
+
+
+want = {"web1": "192.0.2.50", "db1": "192.0.2.40"}
+check("name=ip pairs", names("web1=192.0.2.50,db1=192.0.2.40") == want)
+check("ip=name pairs", names("192.0.2.50=web1,192.0.2.40=db1") == want)
+check("new lines", names("web1=192.0.2.50\ndb1=192.0.2.40") == want)
+check("json list in a string", names('["web1=192.0.2.50", "db1=192.0.2.40"]') == want)
+check("semicolons and spaces", names(" web1 = 192.0.2.50 ; db1 = 192.0.2.40 ") == want)
+check("name with a host name address", names("web1=web1.example.org") == {"web1": "web1.example.org"})
+del os.environ["SERVER_MCP_HOSTS_NAME"]
+
 # ---------------------------------------------------------------- sudo password from the SSH password
 os.environ.update({"SERVER_MCP_HOSTS": "192.0.2.10", "SERVER_MCP_SSH_USER": "main", "SERVER_MCP_SSH_PASSWORD": "pw123"})
 hh = list(s._hosts().values())[0]

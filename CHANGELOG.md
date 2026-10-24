@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.06
+`SERVER_MCP_HOSTS_NAME` is now enough on its own. Pairs work as `name=address` or `address=name`, separated by commas, semicolons or new lines, or as a JSON list inside the string. `SERVER_MCP_HOSTS` is optional.
+
 ## 2026.10.23.05
 System tools now work on hosts with no stacks folder (they start in the login folder). `server_hosts` says "connection ok" and "docker not installed" for hosts without docker.
 

@@ -2,10 +2,14 @@
   "mcpServers": {
     "server": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/drmogie/server-mcp", "server-mcp"],
+      "args": [
+        "--refresh",
+        "--from",
+        "git+https://github.com/drmogie/server-mcp",
+        "server-mcp"
+      ],
       "env": {
-        "SERVER_MCP_HOSTS": "192.0.2.10,192.0.2.11",
-        "SERVER_MCP_HOSTS_NAME": "192.0.2.10=web1,192.0.2.11=db1",
+        "SERVER_MCP_HOSTS_NAME": "web1=192.0.2.10,db1=192.0.2.11",
         "SERVER_MCP_SSH_USER": "admin",
         "SERVER_MCP_SSH_KEY": "/path/to/private_key",
         "SERVER_MCP_SSH_PASSWORD": "change-me-or-remove-if-using-a-key",
