@@ -1812,13 +1812,14 @@ def docker_create(kind: str, name: str, host: str = "", driver: str = "", subnet
 READ_CMDS = {"ls", "cat", "head", "tail", "wc", "grep", "find", "stat", "du", "df", "free", "uptime",
              "pwd", "whoami", "id", "uname", "date", "hostname", "file", "ps", "ss", "lsblk", "which",
              "echo", "sort", "uniq", "cut", "tr", "diff", "readlink", "realpath", "basename", "dirname", "ip",
-             "lsof"}
+             "lsof", "true", "false", "test", "nproc"}
 READ_GIT = {"status", "log", "diff", "show", "branch", "remote", "rev-parse"}
 RISKY_CMDS = {"rm", "rmdir", "mv", "dd", "mkfs", "shutdown", "reboot", "poweroff", "halt", "kill", "killall",
               "pkill", "chmod", "chown", "chattr", "passwd", "usermod", "userdel", "systemctl", "service",
               "apt", "apt-get", "dpkg", "yum", "dnf", "pacman", "iptables", "ufw", "mount", "umount", "fdisk",
               "parted", "crontab", "sudo", "su", "truncate", "shred", "wipefs"}
-SHELL_BAD = re.compile(r"(>|<|`|\$\(|;|&&|\|\||\n|&)")
+SHELL_BAD = re.compile(r"(>|<|`|\$\(|\n|&)")  # chains with ; && || are checked piece by piece
+SAFE_REDIRECT = re.compile(r"\s*(2>&1|[12]?>\s*/dev/null)")
 
 
 def _classify(command: str) -> str:
@@ -1830,9 +1831,10 @@ def _classify(command: str) -> str:
         return "blocked"
     if any(w in RISKY_CMDS for w in re.findall(r"[A-Za-z0-9_.+-]+", cmd)):
         return "destructive"
-    if SHELL_BAD.search(cmd):
+    plain = SAFE_REDIRECT.sub("", cmd).replace("&&", ";").replace("||", ";")
+    if SHELL_BAD.search(plain):
         return "change"
-    for seg in cmd.split("|"):
+    for seg in re.split(r"[|;]", plain):
         parts = seg.split()
         if not parts:
             return "change"

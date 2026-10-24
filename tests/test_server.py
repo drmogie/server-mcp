@@ -90,6 +90,12 @@ check("system folder is never deleted", "protected" in s.server_file_delete("/et
 # ---------------------------------------------------------------- shell classification
 check("ls is read", s._classify("ls -la /tmp") == "read")
 check("rm is destructive", s._classify("rm -rf /tmp/x") == "destructive")
+check("read chains with ; && || are read", s._classify("ls /tmp; wc -c /etc/hostname && grep -c a /etc/hostname || true") == "read")
+check("a chain with one change piece is a change", s._classify("ls; mytool --go") == "change")
+check("a chain with a risky piece is destructive", s._classify("ls && rm x") == "destructive")
+check("2>&1 and /dev/null are fine", s._classify("ls /nope 2>&1 | head -3") == "read" and s._classify("cat /etc/hostname 2>/dev/null") == "read")
+check("other redirects are a change", s._classify("echo hi > /tmp/x") == "change")
+check("background & is a change", s._classify("ls &") == "change")
 check("unknown command is a change", s._classify("mytool --go") == "change")
 check("key file is blocked", s._classify("cat ~/.ssh/id_ed25519") == "blocked")
 check("root run always previews", s.server_run("ls", as_root=True).startswith("PREVIEW"))

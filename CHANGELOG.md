@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.08
+Read-only command chains (joined with `;`, `&&` or `||`, and `2>&1` or `/dev/null` redirects) now run without a preview. Any non-read piece still needs a preview.
+
 ## 2026.10.23.07
 New `SERVER_MCP_HOST_1`, `SERVER_MCP_HOST_2`, ... settings: one name=address pair each, so the config reads one host per line.
 
