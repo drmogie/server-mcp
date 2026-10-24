@@ -99,6 +99,9 @@ os.environ.pop("SERVER_MCP_READ_ONLY")
 
 # ---------------------------------------------------------------- system tools
 check("info runs", "Linux" in s.server_info())
+os.environ["SERVER_MCP_LOCAL_STACKS"] = "/no/such/folder"
+check("info works when the stacks folder is missing", "Linux" in s.server_info(), s.server_info())
+os.environ["SERVER_MCP_LOCAL_STACKS"] = STACKS
 check("processes runs", "PID" in s.server_processes())
 check("bad unit name refused", s.server_service("a;b") == "Bad unit name.")
 check("service stop previews", s.server_service("demo.service", "stop").startswith("PREVIEW"))

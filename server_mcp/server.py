@@ -603,7 +603,8 @@ def server_hosts() -> str:
     """List the Docker hosts this tool knows and test the connection to each."""
     rows = []
     for h in _hosts().values():
-        rc, out, err = _docker(h, ["version", "--format", "{{.Server.Version}}"])
+        rc0, _, err0 = _exec(h, ["true"])
+        rc, out, err = _docker(h, ["version", "--format", "{{.Server.Version}}"]) if rc0 == 0 else (rc0, "", err0)
         row: dict[str, Any] = {
             "host": h["name"], "address": h["address"], "via": f"ssh {h['ssh']}" if h["ssh"] else "local docker",
             "sudo": h["sudo"], "stacks_folder": h["stacks"],
@@ -613,6 +614,9 @@ def server_hosts() -> str:
             row["docker"] = out.strip()
             rc2, out2, _ = _docker(h, ["compose", "version", "--short"])
             row["compose"] = out2.strip() if rc2 == 0 else "not found"
+        elif rc0 == 0:
+            row["connection"] = "ok"
+            row["docker"] = "not installed or not reachable" if "not found" in err else _fail(rc, err)
         else:
             row["error"] = _fail(rc, err)
         rows.append(row)
@@ -1829,7 +1833,10 @@ def server_run(command: str, host: str = "", timeout: int = 60, as_root: bool = 
 
 def _sh(h: dict[str, Any], command: str, root: bool = False, timeout: int = 60, cwd: str | None = None) -> str:
     """Run a shell command and return redacted output."""
-    rc, out, er = _exec(h, ["sh", "-c", command], cwd=cwd or h["stacks"], timeout=max(5, min(int(timeout), 900)), root=root)
+    # Start in the stacks folder if the host has one, otherwise in the login folder.
+    start = cwd or h["stacks"]
+    script = f"cd {shlex.quote(start)} 2>/dev/null || cd \"$HOME\" 2>/dev/null || cd /; {command}"
+    rc, out, er = _exec(h, ["sh", "-c", script], timeout=max(5, min(int(timeout), 900)), root=root)
     text = _redact_text((out + (("\n" + er) if er.strip() else "")).strip())[-12000:]
     return f"ERROR (exit {rc}): {text}" if rc else (text or "(no output)")
 

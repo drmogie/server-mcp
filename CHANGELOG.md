@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.05
+System tools now work on hosts with no stacks folder (they start in the login folder). `server_hosts` says "connection ok" and "docker not installed" for hosts without docker.
+
 ## 2026.10.23.04
 Removed the fallback login. Use a key or an SSH password. The SSH password is also used for sudo when sudo asks, and it can never leak into file data.
 
