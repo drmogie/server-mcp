@@ -125,6 +125,13 @@ h3 = {**h2, "sudo_password": "pw"}
 argv, feed = s._sudo_wrap(h3, ["ls"], True)
 check("sudo password goes through stdin", argv[:4] == ["sudo", "-S", "-p", ""] and feed == b"pw\n" and "pw" not in argv)
 
+# ---------------------------------------------------------------- ssh options
+hh = {"name": "x", "ssh": "u@h", "port": "", "key": ""}
+check("ssh trusts a new host once", "StrictHostKeyChecking=accept-new" in s._ssh_cmd(hh, ["ls"]))
+os.environ["SERVER_MCP_SSH_STRICT"] = "true"
+check("strict mode turns that off", "StrictHostKeyChecking=accept-new" not in s._ssh_cmd(hh, ["ls"]))
+del os.environ["SERVER_MCP_SSH_STRICT"]
+
 # ---------------------------------------------------------------- fallback login
 os.environ.update({"SERVER_MCP_HOSTS": "192.0.2.10", "SERVER_MCP_SSH_USER": "main",
                    "SERVER_MCP_FALLBACK_SSH_USER": "backup", "SERVER_MCP_FALLBACK_SSH_PASSWORD": "pw123",

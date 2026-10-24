@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.03
+Key logins no longer fail on a new host. A new host key is trusted once (like password logins). `SERVER_MCP_SSH_STRICT=true` turns this off.
+
 ## 2026.10.23.02
 Example config and README now use `uvx` (the old `python -m server_mcp` form needed the folder on the path).
 

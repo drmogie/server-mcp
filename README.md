@@ -50,7 +50,7 @@ All settings are environment variables. The full list is at the top of `server_m
 
 - Use a dedicated account where you can, and give it only the sudo rights you want Claude to have.
 - Passwords in environment variables are stored in your Claude config file. Prefer SSH keys.
-- New SSH host keys are accepted on first use for password logins. Use this on networks you trust.
+- New SSH host keys are trusted on first use, then checked. Use this on networks you trust, or set `SERVER_MCP_SSH_STRICT=true`.
 
 ## Tests
 

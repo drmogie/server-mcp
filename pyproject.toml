@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "server-mcp"
-version = "2026.10.23.2"
+version = "2026.10.23.3"
 description = "MCP server that lets Claude manage Linux servers and Docker over SSH, with previews and approval for every change."
 readme = "README.md"
 requires-python = ">=3.10"

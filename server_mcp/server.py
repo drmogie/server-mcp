@@ -66,6 +66,7 @@ Other settings:
   SERVER_MCP_READ_ONLY  "true" to refuse every change
   SERVER_MCP_TIMEOUT    seconds to wait for a normal command (default 60)
   SERVER_MCP_LONG_TIMEOUT  seconds for pull, up and update (default 900)
+  SERVER_MCP_SSH_STRICT "true" to refuse hosts not already in known_hosts (default: trust a new host once)
   SERVER_MCP_SSH_BIN    ssh program to use (default "ssh")
   SERVER_MCP_DOCKER_BIN docker program for local use (default "docker")
 
@@ -308,6 +309,8 @@ def _ssh_cmd(h: dict[str, Any], argv: list[str], cwd: str | None = None) -> list
         remote = f"cd {shlex.quote(cwd)} && {remote}"
     cmd = [ENV.get("SERVER_MCP_SSH_BIN", "ssh"),
            "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    if not _truthy(ENV.get("SERVER_MCP_SSH_STRICT")):
+        cmd += ["-o", "StrictHostKeyChecking=accept-new"]  # trust a new host once, refuse if it later changes
     if h["port"]:
         cmd += ["-p", h["port"]]
     if h["key"]:
