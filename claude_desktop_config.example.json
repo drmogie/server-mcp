@@ -9,7 +9,8 @@
         "server-mcp"
       ],
       "env": {
-        "SERVER_MCP_HOSTS_NAME": "web1=192.0.2.10,db1=192.0.2.11",
+        "SERVER_MCP_HOST_1": "web1=192.0.2.10",
+        "SERVER_MCP_HOST_2": "db1=192.0.2.11",
         "SERVER_MCP_SSH_USER": "admin",
         "SERVER_MCP_SSH_KEY": "/path/to/private_key",
         "SERVER_MCP_SSH_PASSWORD": "change-me-or-remove-if-using-a-key",

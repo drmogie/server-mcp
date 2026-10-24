@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.07
+New `SERVER_MCP_HOST_1`, `SERVER_MCP_HOST_2`, ... settings: one name=address pair each, so the config reads one host per line.
+
 ## 2026.10.23.06
 `SERVER_MCP_HOSTS_NAME` is now enough on its own. Pairs work as `name=address` or `address=name`, separated by commas, semicolons or new lines, or as a JSON list inside the string. `SERVER_MCP_HOSTS` is optional.
 

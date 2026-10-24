@@ -149,7 +149,14 @@ check("new lines", names("web1=192.0.2.50\ndb1=192.0.2.40") == want)
 check("json list in a string", names('["web1=192.0.2.50", "db1=192.0.2.40"]') == want)
 check("semicolons and spaces", names(" web1 = 192.0.2.50 ; db1 = 192.0.2.40 ") == want)
 check("name with a host name address", names("web1=web1.example.org") == {"web1": "web1.example.org"})
-del os.environ["SERVER_MCP_HOSTS_NAME"]
+os.environ["SERVER_MCP_HOSTS_NAME"] = "app=192.0.2.60"
+os.environ["SERVER_MCP_HOST_2"] = "db1=192.0.2.40"
+os.environ["SERVER_MCP_HOST_1"] = "web1=192.0.2.50"
+os.environ.pop("SERVER_MCP_HOSTS", None)
+got = {k: v["address"] for k, v in s._hosts().items()}
+check("one pair per setting (HOST_1, HOST_2) adds to the list, in order", got == {"app": "192.0.2.60", "web1": "192.0.2.50", "db1": "192.0.2.40"} and list(got) == ["app", "web1", "db1"], got)
+for k in ("SERVER_MCP_HOST_1", "SERVER_MCP_HOST_2", "SERVER_MCP_HOSTS_NAME"):
+    del os.environ[k]
 
 # ---------------------------------------------------------------- sudo password from the SSH password
 os.environ.update({"SERVER_MCP_HOSTS": "192.0.2.10", "SERVER_MCP_SSH_USER": "main", "SERVER_MCP_SSH_PASSWORD": "pw123"})

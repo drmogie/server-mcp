@@ -22,6 +22,9 @@ Settings come from environment variables only.
                         Every pair is also a host, so SERVER_MCP_HOSTS is not needed.
                         SSH connects to the address. Claude can use the name or the
                         address. The <NAME> in the settings below can be either one.
+  SERVER_MCP_HOST_1, SERVER_MCP_HOST_2, ...   one pair per setting, easy to read as one
+                        line each in the config: "SERVER_MCP_HOST_1": "web1=192.0.2.50".
+                        They add to SERVER_MCP_HOSTS_NAME.
 
 For each host name (letters, digits; other characters become "_", upper case):
 
@@ -234,7 +237,10 @@ def _parse_names(raw: str) -> tuple[list[tuple[str, str]], list[str]]:
 
 
 def _hosts() -> dict[str, dict[str, Any]]:
-    pair_list, plain = _parse_names(ENV.get("SERVER_MCP_HOSTS_NAME", ""))
+    numbered = sorted((k for k in os.environ if re.fullmatch(r"SERVER_MCP_HOST_\d+", k)),
+                      key=lambda k: int(k.rsplit("_", 1)[1]))
+    raw_names = "\n".join([ENV.get("SERVER_MCP_HOSTS_NAME", "")] + [os.environ[k] for k in numbered])
+    pair_list, plain = _parse_names(raw_names)
     pairs = {addr: name for addr, name in pair_list}
     entries = [n.strip() for n in ENV.get("SERVER_MCP_HOSTS", "").split(",") if n.strip()]
     for addr, _name in pair_list:  # every named host is also a host
