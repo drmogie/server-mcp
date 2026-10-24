@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.10.23.02
+Example config and README now use `uvx` (the old `python -m server_mcp` form needed the folder on the path).
+
 ## 2026.10.23.01
 First release of server-mcp, the full server version of a Docker-only tool.
 

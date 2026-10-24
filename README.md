@@ -27,11 +27,9 @@ Passwords, tokens and keys are hidden in everything Claude sees. Files such as `
 
 ## Install
 
-```
-pip install .
-```
+Nothing to install by hand. Add it to your Claude config with `uvx`, as in `claude_desktop_config.example.json`. It downloads the tool from GitHub and runs the `server-mcp` command.
 
-Add it to your Claude config, see `claude_desktop_config.example.json`.
+To run from a local copy instead: `pip install .`, then use the command `server-mcp`.
 
 ## Settings
 

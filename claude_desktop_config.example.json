@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "server": {
-      "command": "python",
-      "args": ["-m", "server_mcp"],
+      "command": "uvx",
+      "args": ["--refresh", "--from", "git+https://github.com/drmogie/server-mcp", "server-mcp"],
       "env": {
         "SERVER_MCP_HOSTS": "192.0.2.10,192.0.2.11",
         "SERVER_MCP_HOSTS_NAME": "192.0.2.10=web1,192.0.2.11=db1",
