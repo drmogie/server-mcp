@@ -1853,7 +1853,7 @@ def _classify(command: str) -> str:
 @mcp.tool()
 @_safe
 def server_run(command: str, host: str = "", timeout: int = 60, as_root: bool = False,
-               confirm: bool = False) -> str:
+               background: bool = False, confirm: bool = False) -> str:
     """Run one shell command on the Docker host itself (not inside a container).
 
     It starts in the stacks folder. Safe read-only commands (ls, cat, head, tail, grep, find,
@@ -1861,6 +1861,8 @@ def server_run(command: str, host: str = "", timeout: int = 60, as_root: bool = 
     Anything else needs confirm=true after the user says yes. Risky ones (rm, mv, dd, chmod,
     chown, kill, systemctl, apt, reboot, sudo ...) are marked destructive in the preview.
     as_root=true runs it with sudo. Root commands always show a preview first.
+    background=true starts it as a background job and returns a job id at once (use it for
+    anything that can take more than about 40 seconds). Check it with server_job.
     Files with passwords or keys (.env, keys, credentials) are blocked.
     For files, prefer server_file_read, server_file_write and server_file_edit.
     """
@@ -1873,9 +1875,11 @@ def server_run(command: str, host: str = "", timeout: int = 60, as_root: bool = 
     first = command.strip().split()[0].rsplit("/", 1)[-1]
     if as_root and tier == "read":
         tier = "change"
-    stop = _gate(h, tier, f"{'sudo ' if as_root else ''}run {first}", command, confirm)
+    stop = _gate(h, tier, f"{'sudo ' if as_root else ''}run {first}{' (background)' if background else ''}", command, confirm)
     if stop:
         return stop
+    if background:
+        return _bg(h, command, as_root)
     return _sh(h, command, as_root, timeout)
 
 
@@ -1887,6 +1891,85 @@ def _sh(h: dict[str, Any], command: str, root: bool = False, timeout: int = 60, 
     rc, out, er = _exec(h, ["sh", "-c", script], timeout=max(5, min(int(timeout), 900)), root=root)
     text = _redact_text((out + (("\n" + er) if er.strip() else "")).strip())[-12000:]
     return f"ERROR (exit {rc}): {text}" if rc else (text or "(no output)")
+
+
+
+# ---------------------------------------------------------------------------
+# Background jobs: start a command on the host, come back to it later
+# ---------------------------------------------------------------------------
+# Files live in /var/tmp/server-mcp-jobs-<uid> on the host: <id>.cmd, .log, .pid, .rc
+JOB_START = r'''d=/var/tmp/server-mcp-jobs-$(id -u); mkdir -p "$d"; chmod 700 "$d"
+id="$(date +%Y%m%d-%H%M%S)-$$"
+printf '%s\n' "$1" > "$d/$id.cmd"
+setsid nohup sh -c 'sh -c "$1"; echo $? > "$2.rc"' sh "$1" "$d/$id" > "$d/$id.log" 2>&1 < /dev/null &
+echo $! > "$d/$id.pid"
+echo "$id"'''
+
+JOB_STATE = r'''d=/var/tmp/server-mcp-jobs-$(id -u)
+for c in "$d"/*.cmd; do
+  [ -e "$c" ] || { echo "(no jobs)"; exit 0; }
+  id=$(basename "$c" .cmd)
+  if [ -n "$1" ] && [ "$1" != "$id" ]; then continue; fi
+  if [ -e "$d/$id.rc" ]; then st="done, exit code $(cat "$d/$id.rc")"
+  elif kill -0 "$(cat "$d/$id.pid" 2>/dev/null)" 2>/dev/null && ! ps -o stat= -p "$(cat "$d/$id.pid")" 2>/dev/null | grep -q Z; then st="running"
+  else st="done, stopped before it finished"; fi
+  echo "$id | $st | $(head -c 120 "$c" | head -n 1)"
+done'''
+
+
+def _bg(h: dict[str, Any], command: str, root: bool) -> str:
+    """Start a command as a background job on the host. Returns the job id."""
+    rc, out, er = _exec(h, ["sh", "-c", JOB_START, "sh", command], root=root, timeout=30)
+    if rc or not out.strip():
+        return _fail(rc or 1, er or "could not start the job")
+    jid = out.strip().splitlines()[-1]
+    flag = ", as_root=true" if root else ""
+    return (f"Started background job {jid} on {h['name']}{' (as root)' if root else ''}. "
+            f"Check it with server_job(action=\"status\", job_id=\"{jid}\"{flag}) and read the output "
+            f"with server_job(action=\"output\", job_id=\"{jid}\"{flag}).")
+
+
+_JOB_ID = re.compile(r"^[0-9A-Za-z-]{1,60}$")
+
+
+@mcp.tool()
+@_safe
+@_rootable
+def server_job(action: str = "list", job_id: str = "", host: str = "", lines: int = 60,
+               as_root: bool = False, confirm: bool = False) -> str:
+    """Look at background jobs started with background=true.
+
+    action: list, status, output (last lines of the log), cancel, clean (remove finished jobs).
+    Jobs started as root must be read with as_root=true. list, status and output run right away.
+    cancel and clean show a preview first.
+    """
+    h, err = _pick(host)
+    if not h:
+        return err
+    if action not in {"list", "status", "output", "cancel", "clean"}:
+        return "action must be list, status, output, cancel or clean."
+    if action != "list" and action != "clean" and not _JOB_ID.match(job_id or ""):
+        return "Give the job_id (from server_job list)."
+    if action in {"list", "status"}:
+        text = _redact_text(_sh(h, f"sh -c {shlex.quote(JOB_STATE)} sh {shlex.quote(job_id)}", as_root))
+        if action == "status" and job_id and "|" in text:
+            tail = _sh(h, f'tail -n 5 "/var/tmp/server-mcp-jobs-$(id -u)/{job_id}.log" 2>&1', as_root)
+            return text + "\nLast lines:\n" + _redact_text(tail)
+        return text
+    if action == "output":
+        n = max(1, min(int(lines), 2000))
+        return _redact_text(_sh(h, f'tail -n {n} "/var/tmp/server-mcp-jobs-$(id -u)/{job_id}.log" 2>&1', as_root))
+    if action == "cancel":
+        stop = _gate(h, "destructive", f"cancel job {job_id}", f"kill the process group of job {job_id}", confirm)
+        if stop:
+            return stop
+        return _sh(h, f'd=/var/tmp/server-mcp-jobs-$(id -u); p=$(cat "$d/{job_id}.pid" 2>/dev/null); '
+                      f'[ -n "$p" ] && kill -s TERM -- "-$p" 2>&1 && echo "stop signal sent to job {job_id}" || echo "could not stop it (already finished?)"', as_root)
+    stop = _gate(h, "destructive", "clean finished jobs", "delete the log files of finished background jobs", confirm)
+    if stop:
+        return stop
+    return _sh(h, 'd=/var/tmp/server-mcp-jobs-$(id -u); n=0; for r in "$d"/*.pid; do [ -e "$r" ] || continue; b="${r%.pid}"; [ -e "$b.rc" ] || { kill -0 "$(cat "$r")" 2>/dev/null && ! ps -o stat= -p "$(cat "$r")" 2>/dev/null | grep -q Z; } && continue; '
+                  'rm -f -- "$b.rc" "$b.cmd" "$b.log" "$b.pid"; n=$((n+1)); done; echo "removed $n finished job(s)"', as_root)
 
 
 _UNIT = re.compile(r"^[A-Za-z0-9@_.:\\-]{1,120}$")
@@ -1944,11 +2027,14 @@ def server_journal(unit: str = "", lines: int = 100, since: str = "", grep: str 
 
 
 @mcp.tool()
-def server_packages(action: str, packages: str = "", host: str = "", confirm: bool = False) -> str:
+def server_packages(action: str, packages: str = "", host: str = "", background: bool = False,
+                    confirm: bool = False) -> str:
     """Manage system packages (apt, dnf or apk, found automatically).
 
     action: list_updates and search are read only. update (refresh lists), install, remove
     and upgrade show a preview first. packages is a space separated list.
+    background=true starts it as a background job and returns a job id at once. Use it for
+    upgrade and install, which can take minutes. Check it with server_job.
     """
     h, err = _pick(host)
     if not h:
@@ -1976,8 +2062,11 @@ def server_packages(action: str, packages: str = "", host: str = "", confirm: bo
     if action in {"list_updates", "search"}:
         return _sh(h, table[action] + " 2>&1 | head -200")
     stop = _gate(h, "destructive" if action in {"remove", "upgrade"} else "change",
-                 f"packages {action}", table[action], confirm)
-    return stop or _sh(h, "DEBIAN_FRONTEND=noninteractive " + table[action] + " 2>&1", True, 900)
+                 f"packages {action}{' (background)' if background else ''}", table[action], confirm)
+    if stop:
+        return stop
+    cmd = "DEBIAN_FRONTEND=noninteractive " + table[action] + " 2>&1"
+    return _bg(h, cmd, True) if background else _sh(h, cmd, True, 900)
 
 
 @mcp.tool()
@@ -2009,12 +2098,15 @@ def server_power(action: str, host: str = "", confirm: bool = False) -> str:
 
 
 @mcp.tool()
-def docker_cli(args: str, host: str = "", as_root: bool = False, confirm: bool = False) -> str:
+def docker_cli(args: str, host: str = "", as_root: bool = False, background: bool = False,
+               confirm: bool = False) -> str:
     """Run any docker command, for things the other docker tools do not cover.
 
     Give the arguments after "docker", for example: "system df" or "compose -p demo ps".
     Read commands (ps, images, inspect, logs, info, version, stats --no-stream, network ls ...)
     run right away. Anything else shows a preview first.
+    background=true starts it as a background job (builds, pulls, big compose runs).
+    Check it with server_job.
     """
     h, err = _pick(host)
     if not h:
@@ -2029,9 +2121,13 @@ def docker_cli(args: str, host: str = "", as_root: bool = False, confirm: bool =
     sub = argv[0]
     safe = sub in reads or (len(argv) > 1 and argv[1] in {"ls", "ps", "inspect", "config", "logs", "df", "version"}
                             and sub in {"network", "volume", "compose", "system", "image", "container"})
-    stop = None if safe and not as_root else _gate(h, "change", f"docker {sub}", "docker " + shlex.join(argv), confirm)
+    stop = None if safe and not as_root and not background else _gate(
+        h, "change", f"docker {sub}{' (background)' if background else ''}", "docker " + shlex.join(argv), confirm)
     if stop:
         return stop
+    if background:
+        dk = shlex.quote(h.get("docker_path") or "docker")
+        return _bg(h, f"cd {shlex.quote(h['stacks'])} 2>/dev/null; {dk} " + shlex.join(argv) + " 2>&1", bool(as_root or h["sudo"]))
     rc, out, er = _exec(h, ["docker"] + argv, cwd=h["stacks"], timeout=_timeout("long"), root=as_root)
     text = _redact_text((out + (("\n" + er) if er.strip() else "")).strip())[-12000:]
     return f"ERROR (exit {rc}): {text}" if rc else (text or "(no output)")

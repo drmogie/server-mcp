@@ -202,6 +202,34 @@ for nopw in ("", "1"):
 for k in ("SERVER_MCP_SSH_PASSWORD", "SERVER_MCP_SSH_USER"):
     del os.environ[k]
 
+# ---------------------------------------------------------------- background jobs
+import time  # noqa: E402
+pv = s.server_run("sleep 1; echo hello-bg", background=True)
+check("background run previews first", pv.startswith("PREVIEW") and "background" in pv, pv)
+started = s.server_run("sleep 1; echo hello-bg", background=True, confirm=True)
+check("background job starts", "Started background job" in started, started)
+jid = started.split("job ")[1].split(" ")[0]
+check("job shows running", "running" in s.server_job("status", jid), s.server_job("status", jid))
+for _ in range(20):
+    if "done, exit code 0" in s.server_job("status", jid):
+        break
+    time.sleep(0.5)
+check("job finishes with exit code 0", "done, exit code 0" in s.server_job("status", jid), s.server_job("status", jid))
+check("job output has the text", "hello-bg" in s.server_job("output", jid), s.server_job("output", jid))
+check("job appears in list", jid in s.server_job("list"))
+check("bad job id refused", "job_id" in s.server_job("status", "../etc"))
+s.server_run("sleep 30", background=True)
+j2 = s.server_run("sleep 30", background=True, confirm=True)
+j2id = j2.split("job ")[1].split(" ")[0]
+check("cancel previews", s.server_job("cancel", j2id).startswith("PREVIEW"))
+check("cancel works", "stop signal sent" in s.server_job("cancel", j2id, confirm=True))
+time.sleep(1)
+check("cancelled job is done", "done, " in s.server_job("status", j2id), s.server_job("status", j2id))
+check("clean previews", s.server_job("clean").startswith("PREVIEW"))
+check("clean removes finished", "removed" in s.server_job("clean", confirm=True))
+check("background option on packages and docker_cli", all("background" in tools()[n].inputSchema["properties"]
+      for n in ("server_run", "server_packages", "docker_cli")))
+
 # ---------------------------------------------------------------- no personal data in the source
 src = (ROOT / "server_mcp" / "server.py").read_text()
 import re  # noqa: E402

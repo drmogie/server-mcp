@@ -10,6 +10,7 @@ Every change shows a preview first and waits for your yes.
 - **System:** info, processes, services (systemd), logs (journal), packages (apt, dnf, apk), reboot and power off.
 - **Files:** read, write, edit, move, delete and list on any path. File edits show a diff before they run.
 - **Shell:** `server_run`. Safe read commands run at once. Others need approval.
+- **Background jobs:** add `background=true` to `server_run`, `server_packages` or `docker_cli` for long work. You get a job id back at once. Use `server_job` to list, check, read output, cancel or clean.
 - **sudo:** tools with `as_root` run as root. Root actions always show a preview.
 
 ## How approval works
