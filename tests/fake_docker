@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""A fake `docker` for tests. Prints canned answers and records every call."""
+import json, os, sys
+
+args = sys.argv[1:]
+log = os.environ.get("FAKE_DOCKER_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(json.dumps({"args": args, "cwd": os.getcwd()}) + "\n")
+
+
+def lines(*rows):
+    for r in rows:
+        print(json.dumps(r))
+
+
+a = " ".join(args)
+if a.startswith("version"):
+    print("27.3.1")
+elif a.startswith("compose version"):
+    print("2.33.0")
+elif a.startswith("ps"):
+    lines(
+        {"Names": "web", "Image": "example/web", "State": "running", "Status": "Up 2 days (healthy)", "Ports": "", "Networks": "appnet"},
+        {"Names": "api", "Image": "example/api", "State": "exited", "Status": "Exited (1) 1 hour ago", "Ports": "", "Networks": "appnet"},
+    )
+elif a.startswith("logs"):
+    print("2026-10-11T10:00:00Z start ok")
+    print("2026-10-11T10:00:01Z OPENVPN_PASSWORD=hunter2 connecting")
+    print("2026-10-11T10:00:02Z Authorization: Bearer abc123", file=sys.stderr)
+elif a.startswith("inspect"):
+    print(json.dumps([{
+        "Name": "/worker", "RestartCount": 0,
+        "Config": {"Image": "example/worker", "User": "", "Cmd": None,
+                   "Env": ["TZ=UTC", "OPENVPN_USER=user1", "OPENVPN_PASSWORD=hunter2", "PUID=1000"],
+                   "Labels": {"com.docker.compose.project": "demo-stack", "com.docker.compose.service": "worker"}},
+        "State": {"Status": "running", "Running": True, "ExitCode": 0, "Health": {"Status": "healthy"}},
+        "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "appnet", "PortBindings": {}},
+        "NetworkSettings": {"Networks": {"appnet": {"IPAddress": "192.0.2.59"}}},
+        "Mounts": [{"Type": "bind", "Source": "/opt/data/worker", "Destination": "/worker", "RW": True}],
+    }]))
+elif a.startswith("volume inspect"):
+    print(json.dumps([{"Name": args[-1], "Driver": "local", "Mountpoint": "/var/lib/docker/volumes/x/_data",
+                       "Options": {"type": "nfs", "o": "addr=192.0.2.11,nfsvers=3,hard", "device": ":/export/share"},
+                       "Labels": {}, "CreatedAt": "2026-10-11T00:00:00Z"}]))
+elif a.startswith("volume ls"):
+    lines({"Name": "demo_share", "Driver": "local"})
+elif a.startswith("network ls"):
+    lines({"Name": "appnet", "Driver": "macvlan", "Scope": "local"})
+elif a.startswith("images"):
+    lines({"Repository": "example/web", "Tag": "latest", "ID": "abc", "Size": "400MB", "CreatedSince": "2 weeks ago"})
+elif a.startswith("stats"):
+    lines({"Name": "web", "CPUPerc": "1.0%", "MemUsage": "300MiB / 8GiB", "MemPerc": "3.6%", "NetIO": "1MB / 2MB", "BlockIO": "0B / 0B"})
+elif a.startswith("system df"):
+    lines({"Type": "Images", "TotalCount": "3", "Size": "1GB", "Reclaimable": "0B"})
+elif a.startswith("compose ls"):
+    print(json.dumps([{"Name": "demo", "Status": "running(5)", "ConfigFiles": os.environ.get("FAKE_STACK_FILE", "")}]))
+elif a.startswith("compose ps"):
+    lines({"Service": "svc", "Name": "svc", "Image": "example/svc", "State": "running", "Health": "", "Status": "Up 1 hour",
+           "Publishers": [{"PublishedPort": 8080, "TargetPort": 8080}]})
+elif a.startswith("compose config -q"):
+    if "FAIL_CONFIG" in open("compose.yaml").read():
+        print("yaml: invalid", file=sys.stderr)
+        sys.exit(1)
+elif a.startswith("compose config"):
+    print("services:\n  worker:\n    environment:\n      OPENVPN_PASSWORD: hunter2\n      TZ: UTC")
+elif a.startswith("exec"):
+    print("ran:", " ".join(args[2:]))
+elif a.startswith("fail"):
+    print("boom", file=sys.stderr)
+    sys.exit(1)
+else:
+    print("ok")
